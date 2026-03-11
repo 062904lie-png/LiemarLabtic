@@ -16,7 +16,8 @@ def get_student():
     
     return jsonify({
         "name": "Your Name", # You can replace this with your actual name! [cite: 227]
-        "grade": grade, [cite: 34]
-        "section": "Zechariah", [cite: 35]
-        "remarks": remarks [cite: 36]
+        "grade": grade,
+        "section": "Zechariah",
+        "remarks": remarks
     })
+
