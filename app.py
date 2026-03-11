@@ -8,16 +8,16 @@ def home():
 
 @app.route('/student')
 def get_student():
-
+    # Grab name, grade, and section from the URL parameters
+    name = request.args.get('name', 'Liemar Labtic')
     grade = int(request.args.get('grade', 96))
+    section = request.args.get('section', 'Zechariah')
     
-  
     remarks = "Pass" if grade >= 75 else "Fail"
     
     return jsonify({
-        "name": "Liemar Labtic",
+        "name": name,
         "grade": grade,
-        "section": "Zechariah",
+        "section": section,
         "remarks": remarks
     })
-
