@@ -1,43 +1,56 @@
-import mysql.connector
+import psycopg2
 import os
 
 # ==========================================
-# 1. DATABASE CONFIGURATION & INITIALIZATION (Aiven.io MySQL)
+# 1. DATABASE CONFIGURATION (Render PostgreSQL)
 # ==========================================
 def get_db_connection():
-    # Updated with your specific Aiven credentials
-    db_host = os.environ.get("DB_HOST", "mysql-1d01c557-lie-ce54.e.aivencloud.com")
+    """
+    Connects to the Render PostgreSQL database.
+    It prefers the environment variable 'DATABASE_URL' for security,
+    but falls back to your provided connection string for testing.
+    """
+    # 1. Try to get the URL from Render's environment settings (Best Practice)
+    db_url = os.environ.get("DATABASE_URL")
     
-    # Aiven strictly requires SSL connections.
-    # We enforce SSL but disable strict cert verification so you don't 
-    # have to manually upload Aiven's ca.pem file to Render.
-    ssl_args = {"ssl_disabled": False, "ssl_verify_cert": False}
+    # 2. Fallback to your provided connection string if environment variable isn't set
+    if not db_url:
+        db_url = "postgresql://lie_t6gn_user:LhQvToUBBjIbOghXl7OI0nc2kZdip5Cv@dpg-d6qfsd450q8c73bhmpi0-a/lie_t6gn"
     
-    return mysql.connector.connect(
-        host=db_host,
-        port=int(os.environ.get("DB_PORT", 24188)), # Your custom Aiven port
-        user=os.environ.get("DB_USER", "avnadmin"),
-        password=os.environ.get("DB_PASSWORD", "AVNS_JqUPceSA4ZMIxuqhBW2"),
-        database=os.environ.get("DB_NAME", "defaultdb"),
-        **ssl_args
-    )
+    try:
+        # Connect to the PostgreSQL database
+        conn = psycopg2.connect(db_url)
+        return conn
+    except Exception as e:
+        print(f"❌ Database connection failed: {e}")
+        return None
 
 def init_db():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        # Create table if it doesn't exist. MySQL uses DECIMAL for grades.
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS students (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                grade DECIMAL(5, 2) NOT NULL,
-                section VARCHAR(255) NOT NULL
-            )
-        """)
-        conn.commit()
-        cursor.close()
-        conn.close()
-        print("Database initialized successfully!")
-    except Exception as e:
-        print(f"Error initializing database: {e}")
+    """
+    Initializes the database by creating the 'students' table.
+    Note: SERIAL is used for auto-increment in PostgreSQL.
+    """
+    conn = get_db_connection()
+    if conn:
+        try:
+            cursor = conn.cursor()
+            # Create table if it doesn't exist
+            # We use DECIMAL(5, 2) to allow grades like 98.50
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS students (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    grade DECIMAL(5, 2) NOT NULL,
+                    section VARCHAR(255) NOT NULL
+                )
+            """)
+            conn.commit()
+            cursor.close()
+            conn.close()
+            print("✅ Render PostgreSQL initialized successfully!")
+        except Exception as e:
+            print(f"❌ Error initializing database: {e}")
+
+if __name__ == "__main__":
+    # Running this file directly will initialize the table
+    init_db()
