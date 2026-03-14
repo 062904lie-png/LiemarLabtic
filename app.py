@@ -1,15 +1,10 @@
 from flask import Flask, jsonify, request, render_template_string, redirect, url_for
+from database import get_db_connection, init_db
 
 app = Flask(__name__)
 
-# ==========================================
-# 1. DATA STORAGE (In-Memory for Demo)
-# ==========================================
-students = [
-    {"id": 1, "name": "Juan", "grade": 85, "section": "Zechariah"},
-    {"id": 2, "name": "Maria", "grade": 90, "section": "Zechariah"},
-    {"id": 3, "name": "Pedro", "grade": 70, "section": "Zion"}
-]
+# Initialize the database when the app starts
+init_db()
 
 SECRET_API_KEY = "super-secret-key-123"
 
@@ -23,7 +18,14 @@ def home():
 
 @app.route('/students')
 def list_students():
-    grades = [s['grade'] for s in students]
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM students")
+    students = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    grades = [float(s['grade']) for s in students]
     passed = len([g for g in grades if g >= 75])
     failed = len(grades) - passed
     avg = sum(grades) / len(grades) if grades else 0
@@ -107,12 +109,12 @@ def list_students():
                             {% for s in students %}
                             <tr class="hover:bg-slate-50/80 transition-colors">
                                 <td class="p-4 pl-6 text-slate-400 font-medium">#{{s.id}}</td>
-                                <td class="p-4 font-semibold text-slate-900">{{s.name}}</td>
-                                <td class="p-4">
-                                    <div class="flex items-center gap-3">
-                                        <span class="font-bold text-slate-800">{{s.grade}}</span>
-                                        {% if s.grade >= 75 %}
-                                            <span class="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm">PASS</span>
+                            <td class="p-4 font-semibold text-slate-900">{{s.name}}</td>
+                            <td class="p-4">
+                                <div class="flex items-center gap-3">
+                                    <span class="font-bold text-slate-800">{{ "%.2f"|format(s.grade) }}</span>
+                                    {% if s.grade >= 75 %}
+                                        <span class="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm">PASS</span>
                                         {% else %}
                                             <span class="px-2.5 py-1 text-xs font-bold rounded-md bg-rose-100 text-rose-700 border border-rose-200 shadow-sm">FAIL</span>
                                         {% endif %}
@@ -147,7 +149,7 @@ def list_students():
             </div>
             
             <div class="mt-8 text-center text-slate-400 text-sm font-medium">
-                <p>Student Management API &bull; Powered by Flask</p>
+                <p>Student Management API &bull; Powered by Flask & Aiven.io</p>
             </div>
         </div>
     </body>
@@ -184,7 +186,7 @@ def add_student_form():
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-slate-700 mb-1.5">Grade (0-100)</label>
-                    <input type="number" name="grade" min="0" max="100" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition-all placeholder-slate-400 bg-slate-50 focus:bg-white" placeholder="e.g. 85">
+                    <input type="number" step="0.01" name="grade" min="0" max="100" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition-all placeholder-slate-400 bg-slate-50 focus:bg-white" placeholder="e.g. 85.50">
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-slate-700 mb-1.5">Section</label>
@@ -204,24 +206,38 @@ def add_student_form():
 
 @app.route('/edit_student/<int:id>', methods=['GET', 'POST'])
 def edit_student(id):
-    student = next((s for s in students if s["id"] == id), None)
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
+    student = cursor.fetchone()
+
     if not student:
+        cursor.close()
+        conn.close()
         return "Student not found. <a href='/students'>Go back</a>", 404
 
     if request.method == 'POST':
         name = request.form.get("name")
         section = request.form.get("section")
         try:
-            grade = int(request.form.get("grade"))
+            grade = float(request.form.get("grade"))
             if grade < 0 or grade > 100:
+                cursor.close()
+                conn.close()
                 return "Error: Grade must be between 0 and 100. <br><a href='/edit_student/{}'>Go back</a>".format(id), 400
         except ValueError:
+            cursor.close()
+            conn.close()
             return "Error: Grade must be a valid number. <br><a href='/edit_student/{}'>Go back</a>".format(id), 400
 
-        student["name"] = name
-        student["grade"] = grade
-        student["section"] = section
+        cursor.execute("UPDATE students SET name=%s, grade=%s, section=%s WHERE id=%s", (name, grade, section, id))
+        conn.commit()
+        cursor.close()
+        conn.close()
         return redirect(url_for('list_students'))
+
+    cursor.close()
+    conn.close()
 
     html = """
     <!DOCTYPE html>
@@ -246,15 +262,15 @@ def edit_student(id):
             <form method="POST" class="space-y-5">
                 <div>
                     <label class="block text-sm font-semibold text-slate-700 mb-1.5">Full Name</label>
-                    <input type="text" name="name" value="{{student.name}}" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition-all bg-slate-50 focus:bg-white">
+                    <input type="text" name="name" value="{{student['name']}}" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition-all bg-slate-50 focus:bg-white">
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-slate-700 mb-1.5">Grade (0-100)</label>
-                    <input type="number" name="grade" value="{{student.grade}}" min="0" max="100" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition-all bg-slate-50 focus:bg-white">
+                    <input type="number" step="0.01" name="grade" value="{{student['grade']}}" min="0" max="100" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition-all bg-slate-50 focus:bg-white">
                 </div>
                 <div>
                     <label class="block text-sm font-semibold text-slate-700 mb-1.5">Section</label>
-                    <input type="text" name="section" value="{{student.section}}" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition-all bg-slate-50 focus:bg-white">
+                    <input type="text" name="section" value="{{student['section']}}" required class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition-all bg-slate-50 focus:bg-white">
                 </div>
                 <div class="pt-4">
                     <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3.5 rounded-xl transition-all shadow-md hover:shadow-lg hover:-translate-y-0.5 focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
@@ -282,47 +298,73 @@ def add_student():
         return "Error: Missing fields. <br><a href='/add_student_form'>Go back</a>", 400
 
     try:
-        grade = int(grade_str)
+        grade = float(grade_str)
     except ValueError:
         return "Error: Grade must be a number. <br><a href='/add_student_form'>Go back</a>", 400
 
     if grade < 0 or grade > 100:
         return "Error: Grade must be between 0 and 100. <br><a href='/add_student_form'>Go back</a>", 400
 
-    new_id = max([s['id'] for s in students], default=0) + 1
-    new_student = {
-        "id": new_id,
-        "name": name,
-        "grade": grade,
-        "section": section
-    }
-    students.append(new_student)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO students (name, grade, section) VALUES (%s, %s, %s)", (name, grade, section))
+    conn.commit()
+    cursor.close()
+    conn.close()
     
     return redirect(url_for('list_students'))
 
 @app.route('/delete_student/<int:id>', methods=['POST'])
 def delete_student(id):
-    global students
-    students = [s for s in students if s["id"] != id]
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM students WHERE id = %s", (id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
     return redirect(url_for('list_students'))
 
 @app.route('/api/students', methods=['GET'])
 def api_get_students():
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM students")
+    students = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
+    # Convert Decimal to float for JSON output
+    for s in students:
+        s['grade'] = float(s['grade'])
     return jsonify(students)
 
 @app.route('/api/student/<int:id>', methods=['GET'])
 def api_get_student(id):
-    student = next((s for s in students if s["id"] == id), None)
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
+    student = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
     if student:
+        student['grade'] = float(student['grade'])
         return jsonify(student)
     return jsonify({"error": "Student not found"}), 404
 
 @app.route('/api/summary', methods=['GET'])
 def api_summary():
-    if not students:
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT grade FROM students")
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    if not rows:
          return jsonify({"average": 0, "passed": 0, "failed": 0})
     
-    grades = [s['grade'] for s in students]
+    grades = [float(r['grade']) for r in rows]
     passed = len([g for g in grades if g >= 75])
     failed = len(grades) - passed
     avg = sum(grades) / len(grades)
@@ -334,6 +376,16 @@ def secure_data():
     if provided_key != SECRET_API_KEY:
         return jsonify({"error": "Unauthorized. Invalid API Key."}), 401
     
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM students")
+    students = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
+    for s in students:
+        s['grade'] = float(s['grade'])
+        
     return jsonify({"message": "Access Granted to secure data!", "data": students})
 
 if __name__ == '__main__':
