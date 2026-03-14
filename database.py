@@ -5,19 +5,20 @@ import os
 # 1. DATABASE CONFIGURATION & INITIALIZATION (Aiven.io MySQL)
 # ==========================================
 def get_db_connection():
-    db_host = os.environ.get("DB_HOST", "localhost")
+    # Updated with your specific Aiven credentials
+    db_host = os.environ.get("DB_HOST", "mysql-1d01c557-lie-ce54.e.aivencloud.com")
     
     # Aiven strictly requires SSL connections.
     # We enforce SSL but disable strict cert verification so you don't 
     # have to manually upload Aiven's ca.pem file to Render.
-    ssl_args = {"ssl_disabled": False, "ssl_verify_cert": False} if db_host != "localhost" else {}
+    ssl_args = {"ssl_disabled": False, "ssl_verify_cert": False}
     
     return mysql.connector.connect(
         host=db_host,
-        port=int(os.environ.get("DB_PORT", 3306)), # Aiven uses a custom 5-digit port
-        user=os.environ.get("DB_USER", "avnadmin"), # Aiven's default user
-        password=os.environ.get("DB_PASSWORD", ""),
-        database=os.environ.get("DB_NAME", "defaultdb"), # Aiven's default database
+        port=int(os.environ.get("DB_PORT", 24188)), # Your custom Aiven port
+        user=os.environ.get("DB_USER", "avnadmin"),
+        password=os.environ.get("DB_PASSWORD", "AVNS_JqUPceSA4ZMIxuqhBW2"),
+        database=os.environ.get("DB_NAME", "defaultdb"),
         **ssl_args
     )
 
