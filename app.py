@@ -1,9 +1,10 @@
 from flask import Flask, jsonify, request, render_template_string, redirect, url_for
 from database import get_db_connection, init_db
+from psycopg2.extras import RealDictCursor # Added for PostgreSQL dictionary support
 
 app = Flask(__name__)
 
-# Initialize the database when the app starts
+# Initialize the PostgreSQL database when the app starts
 init_db()
 
 SECRET_API_KEY = "super-secret-key-123"
@@ -19,7 +20,11 @@ def home():
 @app.route('/students')
 def list_students():
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    if not conn:
+        return "Database Connection Error", 500
+        
+    # In PostgreSQL (psycopg2), we use RealDictCursor instead of dictionary=True
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute("SELECT * FROM students")
     students = cursor.fetchall()
     cursor.close()
@@ -109,12 +114,12 @@ def list_students():
                             {% for s in students %}
                             <tr class="hover:bg-slate-50/80 transition-colors">
                                 <td class="p-4 pl-6 text-slate-400 font-medium">#{{s.id}}</td>
-                            <td class="p-4 font-semibold text-slate-900">{{s.name}}</td>
-                            <td class="p-4">
-                                <div class="flex items-center gap-3">
-                                    <span class="font-bold text-slate-800">{{ "%.2f"|format(s.grade) }}</span>
-                                    {% if s.grade >= 75 %}
-                                        <span class="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm">PASS</span>
+                                <td class="p-4 font-semibold text-slate-900">{{s.name}}</td>
+                                <td class="p-4">
+                                    <div class="flex items-center gap-3">
+                                        <span class="font-bold text-slate-800">{{ "%.2f"|format(s.grade) }}</span>
+                                        {% if s.grade >= 75 %}
+                                            <span class="px-2.5 py-1 text-xs font-bold rounded-md bg-emerald-100 text-emerald-700 border border-emerald-200 shadow-sm">PASS</span>
                                         {% else %}
                                             <span class="px-2.5 py-1 text-xs font-bold rounded-md bg-rose-100 text-rose-700 border border-rose-200 shadow-sm">FAIL</span>
                                         {% endif %}
@@ -149,7 +154,7 @@ def list_students():
             </div>
             
             <div class="mt-8 text-center text-slate-400 text-sm font-medium">
-                <p>Student Management API &bull; Powered by Flask & Aiven.io</p>
+                <p>Student Management API &bull; Powered by Flask & Render PostgreSQL</p>
             </div>
         </div>
     </body>
@@ -207,7 +212,7 @@ def add_student_form():
 @app.route('/edit_student/<int:id>', methods=['GET', 'POST'])
 def edit_student(id):
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
     cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
     student = cursor.fetchone()
 
@@ -306,87 +311,76 @@ def add_student():
         return "Error: Grade must be between 0 and 100. <br><a href='/add_student_form'>Go back</a>", 400
 
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO students (name, grade, section) VALUES (%s, %s, %s)", (name, grade, section))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO students (name, grade, section) VALUES (%s, %s, %s)", (name, grade, section))
+        conn.commit()
+        cursor.close()
+        conn.close()
     
     return redirect(url_for('list_students'))
 
 @app.route('/delete_student/<int:id>', methods=['POST'])
 def delete_student(id):
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM students WHERE id = %s", (id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
+    if conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM students WHERE id = %s", (id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
     return redirect(url_for('list_students'))
 
 @app.route('/api/students', methods=['GET'])
 def api_get_students():
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM students")
-    students = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    
-    # Convert Decimal to float for JSON output
-    for s in students:
-        s['grade'] = float(s['grade'])
-    return jsonify(students)
+    if conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM students")
+        students = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        # Convert Decimal to float for JSON output
+        for s in students:
+            s['grade'] = float(s['grade'])
+        return jsonify(students)
+    return jsonify({"error": "DB Connection Error"}), 500
 
 @app.route('/api/student/<int:id>', methods=['GET'])
 def api_get_student(id):
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
-    student = cursor.fetchone()
-    cursor.close()
-    conn.close()
+    if conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM students WHERE id = %s", (id,))
+        student = cursor.fetchone()
+        cursor.close()
+        conn.close()
 
-    if student:
-        student['grade'] = float(student['grade'])
-        return jsonify(student)
+        if student:
+            student['grade'] = float(student['grade'])
+            return jsonify(student)
     return jsonify({"error": "Student not found"}), 404
 
 @app.route('/api/summary', methods=['GET'])
 def api_summary():
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT grade FROM students")
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    if conn:
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT grade FROM students")
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
 
-    if not rows:
-         return jsonify({"average": 0, "passed": 0, "failed": 0})
-    
-    grades = [float(r['grade']) for r in rows]
-    passed = len([g for g in grades if g >= 75])
-    failed = len(grades) - passed
-    avg = sum(grades) / len(grades)
-    return jsonify({"average": avg, "passed": passed, "failed": failed})
-
-@app.route('/api/secure_data', methods=['GET'])
-def secure_data():
-    provided_key = request.args.get('api_key')
-    if provided_key != SECRET_API_KEY:
-        return jsonify({"error": "Unauthorized. Invalid API Key."}), 401
-    
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM students")
-    students = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    
-    for s in students:
-        s['grade'] = float(s['grade'])
+        if not rows:
+             return jsonify({"average": 0, "passed": 0, "failed": 0})
         
-    return jsonify({"message": "Access Granted to secure data!", "data": students})
+        grades = [float(r['grade']) for r in rows]
+        passed = len([g for g in grades if g >= 75])
+        failed = len(grades) - passed
+        avg = sum(grades) / len(grades)
+        return jsonify({"average": avg, "passed": passed, "failed": failed})
+    return jsonify({"error": "DB Connection Error"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
